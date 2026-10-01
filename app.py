@@ -1,8 +1,10 @@
 from http.server import ThreadingHTTPServer, SimpleHTTPRequestHandler
 from urllib.parse import urlparse
 import json, os, re
+
 ROOT=os.path.dirname(os.path.abspath(__file__))
-with open(os.path.join(ROOT,'data','schemes.json'),encoding='utf8') as f: DATA=json.load(f)
+with open(os.path.join(ROOT,'data','schemes.json'),encoding='utf8') as f:
+    DATA=json.load(f)
 
 def match(p):
     out=[]
@@ -25,8 +27,7 @@ def match(p):
     return sorted(out,key=lambda x:(x['score'],x['name']),reverse=True)
 
 def parse_profile(text):
-    t=text.lower()
-    p={}
+    t=text.lower(); p={}
     age=re.search(r'\b(\d{1,3})\s*(?:years?|yrs?)\b',t)
     if age: p['age']=int(age.group(1))
     states={'tamil nadu':'Tamil Nadu','andhra pradesh':'Andhra Pradesh','telangana':'Telangana','karnataka':'Karnataka','kerala':'Kerala','maharashtra':'Maharashtra','delhi':'Delhi'}
@@ -44,8 +45,7 @@ def parse_profile(text):
     money=re.search(r'(?:income|salary|earnings|annual family income)[^\d]{0,20}(?:₹|rs\.?|inr\s*)?\s*([\d,.]+)\s*(lakh|lakhs|k|thousand|crore|crores)?',t) or re.search(r'(?:₹|rs\.?|inr\s*)\s*([\d,.]+)\s*(lakh|lakhs|k|thousand|crore|crores)?',t)
     if money:
         try:
-            n=float(money.group(1).replace(',',''))
-            unit=(money.group(2) or '').lower()
+            n=float(money.group(1).replace(',','')); unit=(money.group(2) or '').lower()
             if 'lakh' in unit: n*=100000
             elif unit in ('k','thousand'): n*=1000
             elif 'crore' in unit: n*=10000000
@@ -60,12 +60,11 @@ class Handler(SimpleHTTPRequestHandler):
     def translate_path(self,path):
         if path=='/' or path=='/index.html' or path.startswith('/scheme/'):
             path='/static/index.html'
-        elif path.startswith('/static/'): pass
-        elif path.startswith('/api/'): return path
         return super().translate_path(path)
     def do_GET(self):
         p=urlparse(self.path).path
-        if p=='/api/health': return self.json({'ok':True,'service':'SchemeFinder','version':'2.0'})
+        if p=='/api/health': return self.json({'ok':True,'service':'SchemeFinder','version':'2.3'})
+        if p=='/api/config': return self.json({'googleClientId':os.environ.get('GOOGLE_CLIENT_ID','')})
         if p=='/api/schemes': return self.json({'schemes':DATA,'total':len(DATA),'updated':'2026-10-01'})
         if p.startswith('/api/schemes/'):
             sid=p.split('/')[-1]; s=next((x for x in DATA if x['id']==sid),None)
@@ -80,14 +79,17 @@ class Handler(SimpleHTTPRequestHandler):
             if not body.get('occupation') or body.get('age') is None: return self.json({'error':'Age and occupation are required.'},400)
             return self.json({'matches':match(body)})
         if p=='/api/parse-profile':
-            text=body.get('text','')
-            parsed=parse_profile(text)
+            parsed=parse_profile(body.get('text',''))
             missing=[k for k in ['age','state','income','occupation','education'] if k not in parsed]
             return self.json({'profile':parsed,'missing':missing})
         return self.json({'error':'Not found'},404)
     def json(self,obj,status=200):
-        raw=json.dumps(obj,ensure_ascii=False).encode(); self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',str(len(raw))); self.send_header('Access-Control-Allow-Origin','*'); self.end_headers(); self.wfile.write(raw)
+        raw=json.dumps(obj,ensure_ascii=False).encode()
+        self.send_response(status); self.send_header('Content-Type','application/json; charset=utf-8')
+        self.send_header('Content-Length',str(len(raw))); self.send_header('Cache-Control','no-store')
+        self.send_header('Access-Control-Allow-Origin','*'); self.end_headers(); self.wfile.write(raw)
 
 os.chdir(ROOT)
-print('SchemeFinder 2.0 running at http://localhost:8000')
-ThreadingHTTPServer(('0.0.0.0',8000),Handler).serve_forever()
+port=int(os.environ.get('PORT','8000'))
+print(f'SchemeFinder running on port {port}')
+ThreadingHTTPServer(('0.0.0.0',port),Handler).serve_forever()
