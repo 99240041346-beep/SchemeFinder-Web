@@ -58,7 +58,9 @@ def parse_profile(text):
 
 class Handler(SimpleHTTPRequestHandler):
     def translate_path(self,path):
-        if path=='/' or path=='/index.html' or path.startswith('/scheme/'):
+        # Always route the public root (including query-string visits) to the app.
+        clean=urlparse(path).path
+        if clean=='/' or clean=='/index.html' or clean.startswith('/scheme/'):
             path='/static/index.html'
         return super().translate_path(path)
     def do_GET(self):
